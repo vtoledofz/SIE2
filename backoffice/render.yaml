@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: gadgetsymas-backoffice
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: BACKOFFICE_DB_SCHEMA
+        value: backoffice
+      - key: BACKOFFICE_API_TOKEN
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: N8N_APPROVAL_WEBHOOK_URL
+        sync: false
+      - key: N8N_APPROVAL_TOKEN
+        sync: false
+      - key: COOKIE_HTTPS_ONLY
+        value: "true"
