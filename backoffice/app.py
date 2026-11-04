@@ -1,6 +1,7 @@
 import hmac
 import html
 import json
+import logging
 import os
 import re
 import secrets
@@ -131,6 +132,7 @@ class TelegramResult(BaseModel):
 
 
 app = FastAPI(title="GadgetsY+ Back-office académico", version="1.0.0")
+logger = logging.getLogger("gadgetsymas.backoffice")
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "local-only-change-me"), https_only=os.getenv("COOKIE_HTTPS_ONLY", "false").lower() == "true", same_site="lax")
 security = HTTPBasic(auto_error=False)
 if DATABASE_URL.startswith("postgresql"):
@@ -428,7 +430,14 @@ def decide_incident(request: Request, incident_id: int, decision: str = Form(...
             try:
                 with urllib.request.urlopen(req, timeout=20) as response:
                     incident.telegram_status = "sent" if 200 <= response.status < 300 else "send_failed"
-            except Exception:
+            except urllib.error.HTTPError as exc:
+                logger.warning("n8n approval webhook returned HTTP %s", exc.code)
+                incident.telegram_status = "send_failed"
+            except urllib.error.URLError as exc:
+                logger.warning("n8n approval webhook connection failed (%s)", type(exc.reason).__name__)
+                incident.telegram_status = "send_failed"
+            except Exception as exc:
+                logger.exception("n8n approval webhook failed (%s)", type(exc).__name__)
                 incident.telegram_status = "send_failed"
             session.commit()
     return RedirectResponse("/admin/incidents", status_code=status.HTTP_303_SEE_OTHER)
