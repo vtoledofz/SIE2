@@ -1,30 +1,23 @@
-# Back-office independiente de GadgetsY+
+# Back-office de GadgetsY+
 
-API REST y panel académico separado del eCommerce. Usa FastAPI y PostgreSQL. Incluye los pedidos recibidos, incidencias, decisiones humanas y registro de integraciones; muestra aviso visible de prototipo.
+API y panel operativo independientes del eCommerce, desplegados como servicio web FastAPI en Render y conectados a PostgreSQL de Render. El panel muestra datos del prototipo académico y no realiza ventas reales.
 
-## Despliegue en Render
+## Configuración en Render
 
-1. Crea una base de datos PostgreSQL en Render (o utiliza una instancia existente con permisos para crear un esquema propio).
-2. Crea un servicio web conectado a este directorio. `render.yaml` incluye el comando de arranque y comprobación de salud.
-3. Configura `DATABASE_URL` con la URL interna PostgreSQL y el esquema exclusivo `backoffice`.
-4. Genera secretos independientes para `BACKOFFICE_API_TOKEN`, `SESSION_SECRET`, `ADMIN_PASSWORD` y `N8N_APPROVAL_TOKEN`. Define `ADMIN_USERNAME`.
-5. Define `N8N_APPROVAL_WEBHOOK_URL` como la URL de producción de `telegram-approved` de n8n. `N8N_APPROVAL_TOKEN` debe corresponder a la credencial Header Auth de ese webhook.
-6. Activa cookies seguras con `COOKIE_HTTPS_ONLY=true`.
-7. Revisa `/health`, inicia sesión en `/admin` y verifica el prototipo con pedidos/incidencias ficticios.
+Configura en el servicio web `gadgetsymas-backoffice` las variables `DATABASE_URL`, `BACKOFFICE_DB_SCHEMA=backoffice`, `BACKOFFICE_API_TOKEN`, `SESSION_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `N8N_APPROVAL_WEBHOOK_URL` y `N8N_APPROVAL_TOKEN`. Usa secretos aleatorios y no los incluyas en Git, exports ni capturas.
 
-La primera versión crea tablas al arrancar. Para una entrega académica pequeña es suficiente; una evolución de producción debería añadir Alembic, gestión de roles y migraciones revisadas.
+El panel está disponible en `/admin`; sus secciones son `/admin/orders`, `/admin/incidents` y `/admin/events`. Requiere autenticación de administrador. Desde incidencias, una persona puede aprobar o rechazar propuestas. Solo al aprobar se llama al webhook autenticado de n8n para Telegram.
 
-## API
+El resumen obtiene sus indicadores y gráficas de PostgreSQL: número e importe de pedidos, incidencias abiertas, resultados de integración, pedidos por estado, pedidos por día y unidades por producto. No muestra conversión del embudo porque el back-office todavía no recibe todos los eventos de navegación y carrito necesarios para calcularla.
 
-Todas las rutas `/api` requieren `X-API-Key: <BACKOFFICE_API_TOKEN>`.
+## API de integración
 
-- `POST /api/events`: recibe eventos `order.created`, `payment.stripe_succeeded`, `inventory.stock_updated` y `support.requested`; valida campos, conserva evento/error y actualiza la entidad con idempotencia por `event_id`.
-- `POST /api/incidents/by-external/{case_id}/lookup`: consulta el pedido asociado e historial de incidencias; herramienta de consulta del agente.
-- `POST /api/incidents/by-external/{case_id}/proposal`: guarda salida estructurada del agente como `pending_review`; herramienta de propuesta del agente.
-- `POST /api/incidents/by-external/{case_id}/telegram-result`: registra envío o fallo tras la aprobación.
+Todas las rutas `/api` requieren `X-API-Key` igual a `BACKOFFICE_API_TOKEN`.
 
-Panel: `/admin`, `/admin/orders`, `/admin/incidents`, `/admin/events`.
+- `POST /api/events`: recibe eventos `order.created`, `payment.stripe_succeeded`, `inventory.stock_updated` y `support.requested`; valida campos, registra el resultado y aplica idempotencia por `event_id`.
+- `POST /api/incidents/by-external/{case_id}/lookup`: consulta el pedido asociado e historial de incidencias. Es de solo lectura aunque actualmente use POST.
+- `POST /api/incidents/by-external/{case_id}/proposal`: guarda la propuesta estructurada en estado `pending_review`.
+- `GET /api/incidents/by-external/{case_id}`: consulta estado y datos básicos de una incidencia.
+- `POST /api/incidents/by-external/{case_id}/telegram-result`: registra `sent` o `send_failed` después de una aprobación humana.
 
-## Datos
-
-Usa identificadores como `customer-demo-42` y pedidos `VG-DEMO-*`. No metas nombres, correos, direcciones, mensajes ni tokens reales en ejemplos, capturas, fixtures o workflows.
+Usa solo identificadores y mensajes ficticios como `customer-demo-42` y `VG-DEMO-*`. No incluyas datos personales reales.

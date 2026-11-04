@@ -1,36 +1,33 @@
-# n8n de GadgetsY+ en Render
+# n8n de GadgetsY+
 
-Incluye dos workflows exportables: recepción/sincronización y agente de incidencias; aprobación y Telegram de prueba. Importar ambos desde `workflows/` en una instancia n8n Community desplegada en Render.
+La instancia se ejecuta en local con Docker Compose y Caddy; su URL pública usa el dominio configurado en el `.env` de la raíz. El back-office y PostgreSQL permanecen en Render. Consulta [DEPLOY_LOCAL_WINDOWS.md](../DEPLOY_LOCAL_WINDOWS.md).
 
-## Despliegue y persistencia
+## Importar y configurar
 
-Crear un servicio web Docker desde este directorio. `Dockerfile` utiliza la imagen oficial de n8n y expone el puerto `10000`, que Render espera por defecto. Configurar una instancia PostgreSQL gestionada en Render y guardar el estado n8n en el esquema `n8n_data`; el back-office utiliza el esquema separado `backoffice`. En Render, definir `DB_TYPE=postgresdb`, `DB_POSTGRESDB_HOST`, `DB_POSTGRESDB_PORT`, `DB_POSTGRESDB_DATABASE`, `DB_POSTGRESDB_USER`, `DB_POSTGRESDB_PASSWORD`, `DB_POSTGRESDB_SCHEMA=n8n_data`, `N8N_ENCRYPTION_KEY`, `N8N_HOST`, `N8N_PROTOCOL=https`, `N8N_PORT=10000`, `PORT=10000`, `N8N_EDITOR_BASE_URL`, `N8N_WEBHOOK_URL`, `N8N_PROXY_HOPS=1`, `N8N_SECURE_COOKIE=true`, `EXECUTIONS_DATA_SAVE_ON_SUCCESS=all` y `EXECUTIONS_DATA_SAVE_ON_ERROR=all`. Usa la URL interna de PostgreSQL y una clave de cifrado aleatoria estable; no guardes valores reales en Git. `N8N_WEBHOOK_URL` es la URL externa HTTPS que Render te asigna; la documentación actual de n8n marca `WEBHOOK_URL` como obsoleta en versiones recientes.
+Los archivos JSON se exportan **sin credenciales**. Tras importar cada workflow, asigna credenciales desde el editor, guarda y publica/activa cuando todo esté configurado.
 
-Los servicios gratuitos de Render pueden suspenderse y el PostgreSQL gratuito caduca a los 30 días. La instancia sirve para el prototipo; exporta workflows y registros de evidencia antes de que expire. No se utiliza SQLite ni disco efímero para datos persistentes.
+### `workflows/gadgetsymas-integration.json`
 
-## Configuración necesaria después de importar
+1. **Webhook de la tienda**: Header Auth con nombre exacto `X-Webhook-Token`. El valor debe coincidir con `integration.webhook_secret` en `config.php` de la tienda.
+2. **Upsert en back-office**, ambas herramientas HTTP, **Verifica propuesta guardada por agente**, **Guardar propuesta del agente** y **Guardar derivación humana**: Header Auth con nombre `X-API-Key`. El valor debe coincidir con `BACKOFFICE_API_TOKEN` en las variables de Render. No reutilices la credencial del webhook.
+3. **Proveedor IA: Gemini**: asigna la credencial Google Gemini API de Google AI Studio configurada en el nivel gratuito. No actives facturación. La salida de Gemini se valida antes de guardarse; si no viene como JSON válido, el flujo guarda una propuesta conservadora para revisión humana.
+4. Comprueba que las herramientas **Consultar pedido e historial** y **Proponer y guardar borrador** estén conectadas al puerto **Tool** del agente. Sus definiciones de entrada ya incluyen `case_id` y los campos de la propuesta. El `case_id` es `data.case_id` del evento; si no existe, se usa `event_id`, igual que en la creación del caso en el back-office.
+5. Tras la acción del agente, n8n verifica en el back-office que el caso cambió a `pending_review`. Si el agente no guardó la propuesta, normaliza su salida y realiza un guardado de respaldo; si Gemini falla, crea una derivación humana. Solo devuelve 202 cuando el back-office confirma que guardó el caso para revisión.
 
-1. En `Webhook de la tienda`, asigna una credencial **Header Auth** con nombre de cabecera `X-Webhook-Token`; el valor debe coincidir con `integration.webhook_secret` en `config.php` de la tienda.
-2. En cada nodo que llame a la API del back-office, sustituye `https://BACKOFFICE_URL` por la URL Render y selecciona una credencial **Header Auth** para `X-API-Key`. Utiliza `BACKOFFICE_API_TOKEN`; los IDs ficticios de las referencias de credencial del export deben sustituirse por credenciales reales creadas dentro de n8n.
-3. Conecta una credencial de modelo de chat en `Modelo de chat`. El workflow requiere un proveedor compatible y un secreto configurado dentro de n8n. El modelo no envía mensajes.
-4. En `Webhook aprobación back-office`, asigna credencial Header Auth de `X-Approval-Token`; coincide con `N8N_APPROVAL_TOKEN` en el back-office. Sustituye igualmente la referencia ficticia por la credencial real.
-5. Conecta el bot de Telegram de prueba en `Envía al chat de prueba`, cambia `REEMPLAZAR_CHAT_ID_DE_PRUEBA` por el identificador del chat y comprueba que el bot pertenece a ese chat.
-6. Configura la URL del webhook de producción `telegram-approved` en `N8N_APPROVAL_WEBHOOK_URL` del back-office. Activa workflows solo después de completar las credenciales.
-7. Activa almacenamiento de ejecuciones exitosas y fallidas; exporta de nuevo los workflows revisados para adjuntarlos a la entrega, sin incluir credenciales.
+### `workflows/telegram-approved.json`
 
-## Workflows
+1. **Webhook aprobación back-office**: Header Auth `X-Approval-Token`, cuyo valor debe coincidir con `N8N_APPROVAL_TOKEN` en Render. Debe ser un secreto distinto de `X-API-Key` y `X-Webhook-Token`.
+2. Asigna la misma credencial `X-API-Key` a **Comprueba aprobación en back-office**, **Registra envío correcto** y **Registra fallo de Telegram**.
+3. En **Envía al chat de prueba**, selecciona la credencial del bot de pruebas y reemplaza `REEMPLAZAR_CHAT_ID_DE_PRUEBA` por el ID numérico del chat privado de pruebas. Abre primero el chat y pulsa `/start`.
+4. En Render, establece `N8N_APPROVAL_WEBHOOK_URL` como `https://<tu-dominio-n8n>/webhook/telegram-approved`. El flujo verifica que el caso figure como `approved` en el back-office antes de enviar. Después registra `sent` o `send_failed`.
 
-### `gadgetsymas-integration.json`
+Activa el registro de ejecuciones exitosas y fallidas en n8n. No exportes credenciales ni pegues secretos en los JSON, capturas o archivos del proyecto.
 
-Webhook autenticado → validación del contrato → recepción/upsert en back-office. La rama `support.requested` ejecuta el agente, que dispone de herramientas HTTP de consulta y guardado de propuesta. El registro de propuesta siempre queda pendiente de revisión; no hay nodo de envío a Telegram en este flujo.
+## Prueba completa
 
-### `telegram-approved.json`
+1. Envía desde la tienda una solicitud de soporte ficticia.
+2. En **Executions**, abre el workflow de integración y comprueba consulta y guardado de la propuesta.
+3. En `https://<tu-backoffice>.onrender.com/admin/incidents`, confirma que el caso aparece como `pending_review`.
+4. Pulsa **Aprobar y enviar a Telegram**. Confirma que el mensaje llega al chat de pruebas y que el estado de Telegram aparece como `sent`.
 
-Webhook de aprobación autenticado → comprueba que la decisión es aprobada → envía al chat de prueba → registra el resultado en back-office. El panel solo llama al webhook tras pulsar «Aprobar y enviar a Telegram».
-
-## Casos de demostración
-
-- Pedido ficticio en estado `payment_pending`: debe aparecer una vez en `/admin/orders` y `event_id`/`correlation_id` deben coincidir con la ejecución n8n.
-- Cambio de stock desde el panel eCommerce: debe crear evento en back-office.
-- Incidencia ficticia: el agente consulta, guarda propuesta `pending_review`, un revisor la aprueba o rechaza desde el back-office; solo aprobada pasa al chat Telegram de prueba.
-- Enviar un evento incompleto: se espera respuesta 422 y rama de validación fallida. Revisar historial de n8n y registro en el back-office.
+Si el agente falla, abre la ejecución y revisa el primer nodo con error. El back-office conserva el estado `open` si no recibió una propuesta y el registro de eventos conserva el resultado de la integración.
