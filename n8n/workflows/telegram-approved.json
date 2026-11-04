@@ -17,17 +17,11 @@
         0,
         80
       ],
-      "webhookId": "telegram-approved",
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "TrPldh3mIrNJ0uEk",
-          "name": "Header Auth account"
-        }
-      }
+      "webhookId": "telegram-approved"
     },
     {
       "parameters": {
-        "jsCode": "const body=$json.body??$json; const valid=body.decision==='approved' && !!body.case_id && !!body.draft_message; return [{json:{...body,valid}}];"
+        "jsCode": "const body = $json.body ?? $json;\nconst caseId = String(body.case_id ?? '').trim();\nconst draft = String(body.draft_message ?? '').trim().slice(0,4000);\nconst valid = body.decision === 'approved' && caseId.length > 0 && draft.length > 0;\nreturn [{json:{...body,case_id:caseId,draft_message:draft,valid}}];"
       },
       "id": "845c05c6-3100-4825-b677-d4593618eee3",
       "name": "Comprueba aprobación",
@@ -73,7 +67,7 @@
     },
     {
       "parameters": {
-        "chatId": "GadgetsYmas_bot",
+        "chatId": "REEMPLAZAR_CHAT_ID_DE_PRUEBA",
         "text": "={{$json.draft_message}}",
         "additionalFields": {
           "appendAttribution": false
@@ -88,39 +82,7 @@
         0
       ],
       "webhookId": "db86c629-f0bc-4baf-9fc4-604cc7308581",
-      "credentials": {
-        "telegramApi": {
-          "id": "RLM3RBcBTCm19BFd",
-          "name": "Telegram account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "=https://gadgetsymas-backoffice.onrender.com/api/incidents/by-external/{{ $('Comprueba aprobación').item.json.case_id }}/telegram-result",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "contentType": "raw",
-        "rawContentType": "application/json",
-        "body": "={{JSON.stringify({status:'sent'})}}",
-        "options": {}
-      },
-      "id": "9d831897-1725-423c-9e45-5a497d4ab787",
-      "name": "Registra envío en back-office",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        992,
-        0
-      ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "TrPldh3mIrNJ0uEk",
-          "name": "Header Auth account"
-        }
-      }
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -142,7 +104,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ {sent:false, error:'approval_required'} }}",
+        "responseBody": "={{ {sent:false, error:'No se confirmó una aprobación válida en el back-office.'} }}",
         "options": {
           "responseCode": 403
         }
@@ -154,6 +116,134 @@
       "position": [
         736,
         208
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://gadgetsymas-backoffice.onrender.com/api/incidents/by-external/{{ encodeURIComponent($('Comprueba aprobación').item.json.case_id) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "8181bc8a-765d-4e54-a31d-78afc16f1f92",
+      "name": "Comprueba aprobación en back-office",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        736,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.statusCode >= 200 && $json.statusCode < 300 && $json.body?.status === 'approved'}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a55a301c-9d1a-4f3e-9c0f-86fc03fd126d",
+      "name": "¿Back-office confirma aprobación?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        976,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://gadgetsymas-backoffice.onrender.com/api/incidents/by-external/{{ encodeURIComponent($('Comprueba aprobación').item.json.case_id) }}/telegram-result",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{JSON.stringify({status:'sent'})}}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "9d831897-1725-423c-9e45-5a497d4ab787",
+      "name": "Registra envío correcto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1232,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://gadgetsymas-backoffice.onrender.com/api/incidents/by-external/{{ encodeURIComponent($('Comprueba aprobación').item.json.case_id) }}/telegram-result",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{JSON.stringify({status:'send_failed'})}}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "37d01ac3-b327-4c07-8eab-b1acef8a91f2",
+      "name": "Registra fallo de Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1232,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {sent:false, case_id:$('Comprueba aprobación').item.json.case_id, error:'telegram_send_failed'} }}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "8faf1bc2-fd26-4f63-8369-021c3b214779",
+      "name": "Responde fallo de Telegram",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1472,
+        240
       ]
     }
   ],
@@ -185,7 +275,7 @@
       "main": [
         [
           {
-            "node": "Envía al chat de prueba",
+            "node": "Comprueba aprobación en back-office",
             "type": "main",
             "index": 0
           }
@@ -203,18 +293,65 @@
       "main": [
         [
           {
-            "node": "Registra envío en back-office",
+            "node": "Registra envío correcto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registra fallo de Telegram",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Registra envío en back-office": {
+    "Comprueba aprobación en back-office": {
+      "main": [
+        [
+          {
+            "node": "¿Back-office confirma aprobación?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Back-office confirma aprobación?": {
+      "main": [
+        [
+          {
+            "node": "Envía al chat de prueba",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rechaza sin aprobación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registra envío correcto": {
       "main": [
         [
           {
             "node": "Confirma envío",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registra fallo de Telegram": {
+      "main": [
+        [
+          {
+            "node": "Responde fallo de Telegram",
             "type": "main",
             "index": 0
           }
